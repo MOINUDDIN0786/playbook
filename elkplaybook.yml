@@ -190,3 +190,5 @@
     - name: Output Filebeat logs for debugging
       debug:
         var: filebeat_logs.stdout
+    - name: Notify Via Email
+      command: /opt/ansible/newproject/email.sh
