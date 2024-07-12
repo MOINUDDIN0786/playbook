@@ -1,0 +1,192 @@
+---
+- name: Setup and run ELK stack with Filebeat in Docker containers
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Pull Elasticsearch container image
+      docker_image:
+        name: docker.elastic.co/elasticsearch/elasticsearch
+        tag: 7.10.2
+        source: pull
+
+    - name: Pull Logstash container image
+      docker_image:
+        name: docker.elastic.co/logstash/logstash
+        tag: 7.10.2
+        source: pull
+
+    - name: Pull Kibana container image
+      docker_image:
+        name: docker.elastic.co/kibana/kibana
+        tag: 7.10.2
+        source: pull
+
+    - name: Pull Filebeat container image
+      docker_image:
+        name: myfilebeat:latest
+        source: pull
+
+    - name: Ensure the custom Docker network exists
+      docker_network:
+        name: elastic
+        state: present
+
+    - name: Create Elasticsearch data directory
+      file:
+        path: /home/moinuddin/elasticsearch_data
+        state: directory
+        owner: 1000
+        group: 1000
+        mode: '0755'
+
+    - name: Create Logstash pipeline directory
+      file:
+        path: /home/moinuddin/logstash_pipeline
+        state: directory
+        owner: 1000
+        group: 1000
+        mode: '0755'
+
+    - name: Create Kibana data directory
+      file:
+        path: /home/moinuddin/kibana_data
+        state: directory
+        owner: 1000
+        group: 1000
+        mode: '0755'
+
+    - name: Create Filebeat configuration directory
+      file:
+        path: /home/moinuddin/filebeat_yml
+        state: directory
+        owner: 1000
+        group: 1000
+        mode: '0755'
+
+    - name: Copy Filebeat configuration file
+      copy:
+        src: /home/moinuddin/filebeat/filebeat.yml
+        dest: /home/moinuddin/filebeat_yml/filebeat.yml
+        remote_src: yes
+        owner: 1000
+        group: 1000
+        mode: '0644'
+
+    - name: Run Elasticsearch container
+      docker_container:
+        name: elasticsearch1
+        image: docker.elastic.co/elasticsearch/elasticsearch:7.10.2
+        state: started
+        restart_policy: always
+        env:
+          discovery.type: single-node
+        ports:
+          - "9200:9200"
+          - "9300:9300"
+        volumes:
+          - /home/moinuddin/elasticsearch_data:/usr/share/elasticsearch/data
+        networks:
+          - name: elastic
+        user: "1000:1000"
+
+    - name: Run Logstash container
+      docker_container:
+        name: logstash1
+        image: docker.elastic.co/logstash/logstash:7.10.2
+        state: started
+        restart_policy: always
+        volumes:
+          - /home/moinuddin/logstash_pipeline:/usr/share/logstash/pipeline
+        ports:
+          - "5044:5044"
+        networks:
+          - name: elastic
+
+    - name: Run Kibana container
+      docker_container:
+        name: kibana1
+        image: docker.elastic.co/kibana/kibana:7.10.2
+        state: started
+        restart_policy: always
+        env:
+          ELASTICSEARCH_HOSTS: "http://elasticsearch1:9200"
+        ports:
+          - "5601:5601"
+        volumes:
+          - /home/moinuddin/kibana_data:/usr/share/kibana/data
+        networks:
+          - name: elastic
+        user: "1000:1000"
+
+    - name: Run Filebeat container
+      docker_container:
+        name: filebeat1
+        image: myfilebeat:latest
+        state: started
+        restart_policy: always
+        volumes:
+          - /home/moinuddin/filebeat_yml/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+        networks:
+          - name: elastic
+
+    - name: Wait for Elasticsearch to start
+      wait_for:
+        host: localhost
+        port: 9200
+        delay: 10
+        timeout: 300
+        state: started
+
+    - name: Verify Elasticsearch is accessible
+      uri:
+        url: http://localhost:9200
+        status_code: 200
+
+    - name: Wait for Kibana to start
+      wait_for:
+        host: localhost
+        port: 5601
+        delay: 10
+        timeout: 300
+        state: started
+
+    - name: Verify Kibana is accessible
+      uri:
+        url: http://localhost:5601
+        status_code: 200
+
+    - name: Print Elasticsearch container logs for debugging
+      command: docker logs elasticsearch1
+      register: elasticsearch_logs
+      ignore_errors: yes
+
+    - name: Output Elasticsearch logs for debugging
+      debug:
+        var: elasticsearch_logs.stdout
+
+    - name: Print Logstash container logs for debugging
+      command: docker logs logstash1
+      register: logstash_logs
+      ignore_errors: yes
+
+    - name: Output Logstash logs for debugging
+      debug:
+        var: logstash_logs.stdout
+
+    - name: Print Kibana container logs for debugging
+      command: docker logs kibana1
+      register: kibana_logs
+      ignore_errors: yes
+
+    - name: Output Kibana logs for debugging
+      debug:
+        var: kibana_logs.stdout
+
+    - name: Print Filebeat container logs for debugging
+      command: docker logs filebeat1
+      register: filebeat_logs
+      ignore_errors: yes
+
+    - name: Output Filebeat logs for debugging
+      debug:
+        var: filebeat_logs.stdout

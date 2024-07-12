@@ -1,0 +1,68 @@
+---
+- name: Setup and run HAProxy container
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Create HAProxy configuration directory
+      file:
+        path: /home/moinuddin/haproxy1
+        state: directory
+
+    - name: Copy HAProxy configuration file
+      copy:
+        src: /home/moinuddin/haproxy/haproxy.cfg
+        dest: /home/moinuddin/haproxy1/haproxy.cfg
+        remote_src: yes
+
+    - name: Pull HAProxy container image
+      docker_image:
+        name: haproxy
+        tag: latest
+        source: pull
+
+    - name: Run HAProxy container
+      docker_container:
+        name: haproxy1
+        image: haproxytech/haproxy-alpine:latest
+        state: started
+        restart_policy: always
+        volumes:
+          - /home/moinuddin/haproxy1/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+        ports:
+          - "8404:8404"
+          - "80:80"
+        networks:
+          - name: elastic
+
+    - name: Wait for HAProxy to start
+      wait_for:
+        host: localhost
+        port: 80
+        delay: 10
+        timeout: 20
+
+    - name: Check the status of HAProxy container
+      shell: docker ps -a --filter "name=haproxy1"
+      register: haproxy_status
+      ignore_errors: yes
+
+    - name: Debug HAProxy container status
+      debug:
+        var: haproxy_status.stdout
+
+    - name: Print HAProxy container logs for debugging
+      command: docker logs haproxy1
+      register: haproxy_logs
+      ignore_errors: yes
+
+    - name: Output HAProxy logs for debugging
+      debug:
+        var: haproxy_logs.stdout
+
+    - name: Verify HAProxy stats page is accessible
+      uri:
+        url: http://localhost:8404/haproxy?stats
+        status_code: 200
+        user: admin
+        password: password
+      ignore_errors: yes

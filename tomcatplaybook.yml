@@ -1,0 +1,115 @@
+---
+- name: Deploy Tomcat container and deploy WAR file using Docker
+  hosts: localhost
+  become: yes
+
+  tasks:
+    - name: Install Docker Python bindings
+      pip:
+        name: docker
+        state: present
+
+    - name: Pull the Tomcat container image
+      docker_image:
+        name: tomcat
+        tag: latest
+        source: pull
+
+    - name: Create a directory for sample WAR file if not exists
+      file:
+        path: /tmp/sample
+        state: directory
+
+    - name: Ensure index.html file exists on the controller
+      stat:
+        path: /home/moinuddin/Documents/index.html
+      register: html_file
+
+    - name: Fail if the index.html file does not exist
+      fail:
+        msg: "The file /home/moinuddin/ansible/index.html does not exist on the controller."
+      when: not html_file.stat.exists
+
+    - name: Copy index.html to /tmp directory
+      copy:
+        src: /home/moinuddin/Documents/index.html
+        dest: /tmp/sample/index.html
+        remote_src: yes
+
+    - name: Run Tomcat container with mounted volume for WAR deployment
+      docker_container:
+        name: tomcat_container
+        image: tomcat:latest
+        state: started
+        ports:
+          - "8080:8080"
+        networks:
+          - name: elastic
+
+        volumes:
+          - /tmp/sample/index.html:/tmp/index.html
+
+    - name: Wait for Tomcat to start
+      wait_for:
+        host: localhost
+        port: 8080
+        delay: 10
+        timeout: 120
+
+    - name: Copy contents of webapps.dist to webapps inside the container
+      command: docker exec tomcat_container cp -r /usr/local/tomcat/webapps.dist/. /usr/local/tomcat/webapps/
+      register: cp_command
+      ignore_errors: yes
+
+    - name: Debug cp command output
+      debug:
+        var: cp_command.stdout
+
+    - name: Remove webapps.dist directory inside the container
+      command: docker exec tomcat_container rm -rf /usr/local/tomcat/webapps.dist
+      register: rm_command
+      ignore_errors: yes
+
+    - name: Debug rm command output
+      debug:
+        var: rm_command.stdout
+
+    - name: Copy index.html to ROOT directory inside the container
+      command: docker exec tomcat_container cp -r /tmp/index.html /usr/local/tomcat/webapps/ROOT/index.html
+      register: copy_html_command
+      ignore_errors: yes
+
+    - name: Debug copy index.html command output
+      debug:
+        var: copy_html_command.stdout
+
+    - name: Print Tomcat container logs for debugging
+      command: docker logs tomcat_container
+      register: tomcat_logs
+      ignore_errors: yes
+
+    - name: Debug Tomcat logs
+      debug:
+        var: tomcat_logs.stdout
+
+    - name: Verify sample application is accessible
+      uri:
+        url: http://localhost:8080/index.html
+        status_code: 200
+        return_content: yes
+      register: webpage
+      ignore_errors: yes
+
+    - name: Debug webpage variable
+      debug:
+        var: webpage
+
+    - name: Output webpage content
+      debug:
+        msg: "{{ webpage.content }}"
+      when: webpage.status == 200
+
+    - name: Fail if the application is not accessible
+      fail:
+        msg: "The sample application is not accessible."
+      when: webpage.status != 200
