@@ -113,3 +113,5 @@
       fail:
         msg: "The sample application is not accessible."
       when: webpage.status != 200
+    - name: Notify Via Email
+      command: /opt/ansible/newproject/email.sh
