@@ -66,5 +66,3 @@
         user: admin
         password: password
       ignore_errors: yes
-    - name: Notify via email
-      command: /opt/ansible/newproject/email.sh
